@@ -21,9 +21,11 @@ import {
   Star,
   StarOff,
   Tag,
+  Plus,
   Trash,
 } from 'lucide-react';
 import { useOptimisticThreadState } from '@/components/mail/optimistic-thread-state';
+import { LabelDialog } from '@/components/labels/label-dialog';
 import { useOptimisticActions } from '@/hooks/use-optimistic-actions';
 import { ExclamationCircle, Mail, Clock } from '../icons/icons';
 import { SnoozeDialog } from '@/components/mail/snooze-dialog';
@@ -40,6 +42,7 @@ import { m } from '@/paraglide/messages';
 import { useParams } from 'react-router';
 import { useQueryState } from 'nuqs';
 import { toast } from 'sonner';
+import type { Label as LabelType } from '@/types';
 
 interface EmailAction {
   id: string;
@@ -61,7 +64,7 @@ interface EmailContextMenuProps {
   refreshCallback?: () => void;
 }
 
-const LabelsList = ({ threadId, bulkSelected }: { threadId: string; bulkSelected: string[] }) => {
+const LabelsList = ({ threadId, bulkSelected, onCreateLabel }: { threadId: string; bulkSelected: string[]; onCreateLabel: () => void }) => {
   const { userLabels: labels } = useLabels();
   const { optimisticToggleLabel } = useOptimisticActions();
   const targetThreadIds = bulkSelected.length > 0 ? bulkSelected : [threadId];
@@ -89,6 +92,19 @@ const LabelsList = ({ threadId, bulkSelected }: { threadId: string; bulkSelected
 
     optimisticToggleLabel(targetThreadIds, labelId, !hasLabel);
   };
+
+  // If no labels exist, show create label button
+  if (!labels || labels.length === 0) {
+    return (
+      <ContextMenuItem 
+        onClick={onCreateLabel}
+        className="font-normal"
+      >
+        <Plus className="mr-2 h-4 w-4 opacity-60" />
+        {m['common.mail.createNewLabel']()}
+      </ContextMenuItem>
+    );
+  }
 
   return (
     <>
@@ -148,6 +164,7 @@ export function ThreadContextMenu({
   const [, setActiveReplyId] = useQueryState('activeReplyId');
   const optimisticState = useOptimisticThreadState(threadId);
   const trpc = useTRPC();
+  const { refetch: refetchLabels } = useLabels();
   const {
     optimisticMoveThreadsTo,
     optimisticToggleStar,
@@ -159,6 +176,7 @@ export function ThreadContextMenu({
     optimisticUnsnooze,
   } = useOptimisticActions();
   const { mutateAsync: deleteThread } = useMutation(trpc.mail.delete.mutationOptions());
+  const { mutateAsync: createLabel } = useMutation(trpc.labels.create.mutationOptions());
 
   const { isUnread, isStarred, isImportant } = useMemo(() => {
     const unread = threadData?.hasUnread ?? false;
@@ -454,11 +472,31 @@ export function ThreadContextMenu({
   }, [isSpam, isBin, isArchiveFolder, isInbox, isSent, handleMove, handleDelete]);
 
   const [snoozeOpen, setSnoozeOpen] = useState(false);
+  const [createLabelOpen, setCreateLabelOpen] = useState(false);
 
   const handleSnoozeConfirm = (wakeAt: Date) => {
     const targets = mail.bulkSelected.length ? mail.bulkSelected : [threadId];
     optimisticSnooze(targets, currentFolder, wakeAt);
     setSnoozeOpen(false);
+  };
+
+  const handleCreateLabel = async (data: LabelType) => {
+    const labelData = {
+      name: data.name,
+      color: {
+        backgroundColor: data.color?.backgroundColor || '#202020',
+        textColor: data.color?.textColor || '#FFFFFF'
+      }
+    };
+    
+    await toast.promise(createLabel(labelData), {
+      loading: m['common.labels.savingLabel'](),
+      success: m['common.labels.saveLabelSuccess'](),
+      error: m['common.labels.failedToSavingLabel'](),
+    }).unwrap();
+    
+    await refetchLabels();
+    setCreateLabelOpen(false);
   };
 
   const otherActions: EmailAction[] = useMemo(
@@ -520,6 +558,11 @@ export function ThreadContextMenu({
 
   return (
     <>
+      <LabelDialog
+        open={createLabelOpen}
+        onOpenChange={setCreateLabelOpen}
+        onSubmit={handleCreateLabel}
+      />
       <ContextMenu>
         <ContextMenuTrigger disabled={isLoading || isFetching} className="w-full">
           {children}
@@ -538,7 +581,7 @@ export function ThreadContextMenu({
               {m['common.mail.labels']()}
             </ContextMenuSubTrigger>
             <ContextMenuSubContent className="dark:bg-panelDark max-h-[520px] w-48 overflow-y-auto bg-white">
-              <LabelsList threadId={threadId} bulkSelected={mail.bulkSelected} />
+              <LabelsList threadId={threadId} bulkSelected={mail.bulkSelected} onCreateLabel={() => setCreateLabelOpen(true)} />
             </ContextMenuSubContent>
           </ContextMenuSub>
 

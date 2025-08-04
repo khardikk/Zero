@@ -172,11 +172,13 @@ export function NavMain({ items }: NavMainProps) {
   );
 
   const onSubmit = async (data: LabelType) => {
-    toast.promise(createLabel(data), {
+    await toast.promise(createLabel(data), {
       loading: 'Creating label...',
       success: 'Label created successfully',
       error: 'Failed to create label',
-    });
+    }).unwrap();
+    
+    await refetch();
   };
 
   return (
@@ -253,7 +255,6 @@ export function NavMain({ items }: NavMainProps) {
                       </Button>
                     }
                     onSubmit={onSubmit}
-                    onSuccess={refetch}
                   />
                 ) : activeAccount?.providerId === 'microsoft' ? null : null}
               </div>
